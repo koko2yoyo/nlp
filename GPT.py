@@ -19,55 +19,52 @@ dropout = 0.5
 n_head = 3
 
 
-class Head(nn.Module):
+class MultiHeadAttention(nn.Module):
 
-    def __init__(self, head_size):
+    def __init__(self, voc_embd ,d_model，num_hend):
         super().__init__()
-        self.key = nn.Linear(n_embd, head_size, bias= False)
-        self.query = nn.Linear(n_embd, head_size, bias=False)
-        self.value = nn.Linear(n_embd, head_size, bias=False)
+        self.d_model = d_model
+        self.num_hend = num_hend
+        self.w_q = nn.Linear(voc_embd, d_model, bias= False)
+        self.w_k = nn.Linear(voc_embd, d_model, bias=False)
+        self.w_v = nn.Linear(voc_embd, d_model, bias=False)
+        # 注册一个下三角矩阵
         self.register_buffer('tril', torch.tril(torch.ones(max_len, max_len)))
         self.dropout = nn.Dropout(dropout)
 
+        self.line = nn.Linear(d_model,voc_embd)
+        self.norm = nn.LayerNorm(voc_embd)
+
     def forward(self, x):
         B,T,C = x.shape
-        k = self.key(x)
-        q = self.query(x)
-        wei = q @ k.transpose(-2,-1) * C**-0.5
-        wei = wei.masked_fill(self.tril[:T, :T] ==0, float('-inf'))
-        wei = F.softmax(wei, dim=-1)
-        wei = self.dropout(wei)
-        v = self.value(x)
-        out = wei @ v
-        return out
+        residual = x
+        head_size = self.d_model/self.num_head
+        q = self.w_q(x).view(B,-1,self.num_head, head_size).transpose(1,2)
+        k = self.w_k(x).view(B,-1,self.num_head, head_size).transpose(1,2)
+        v = self.w_v(x).view(B,-1,self.num_head, head_size).transpose(1,2)
+        score = q @ k.transpose(-2,-1) * C**-0.5
+        score = score.masked_fill(self.tril[:T, :T] ==0, float('-inf'))
+        score = F.softmax(score, dim=-1)
+        score = self.dropout(score)
+        
+        atten  = wei @ v
+        output = self.line(atten)
+        return self.norm(output+residual)
 
-class MultiHeadAttention(nn.Module):
 
-    def __init__(self, num_head, head_size):
-        super().__init__()
-        self.heads = nn.ModuleList([Head(head_size) for _ in range(num_head)])
-        self.proj = nn.Linear(n_embd, n_embd)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x):
-        out = torch.cat([h(x) for h in self.heads], dim=-1)
-        out = self.dropout(self.proj(out))
-        return out
 
 
 class FeedFoward(nn.Module):
 
-    def __init__(self, n_embd):
+    def __init__(self, voc_embd):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(n_embd, 4* n_embd),
-            nn.LeakyReLU(),
-            nn.Linear(4* n_embd, n_embd),
-            nn.Dropout(dropout),
-        )
+        self.net = nn.Sequential(nn.Linear(voc_embd, 4* voc_embd),nn.LeakyReLU(),
+            nn.Linear(4* voc_embd, voc_embd), nn.Dropout(dropout),)
+        self.norm = nn.LayerNorm(voc_embd)
+        
 
     def forward(self, x):
-        return self.net(x)
+        return self.norm(self.net(x) + x)
 
 class Block(nn.Module):
 
@@ -106,6 +103,7 @@ class BigramLanguageModel(nn.Module):
         x = tok_emb + pos_emb
         x = self.blocks(x)
         x = self.ln_f(x)
+        
         logits = self.lm_head(x)
 
         if targets is None:
@@ -127,9 +125,33 @@ class BigramLanguageModel(nn.Module):
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:,[-1]]] = -float('inf')
             probs = F.softmax(logits, dim=-1)
+            # 随机抽样，随机抽样num_samples
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
+
+# 模型训练
+net = BigramLanguageModel()
+logits, loss = net(batch['input'],batch['target'])
+
+# 模型测试
+net = BigramLanguageModel()
+net.eval()
+logits, loss = net(batch['input'],batch['target'])
+
+# 生成模型
+decode = lambda l: ''.join(seq_dict[i] for i in l)
+net = torch.load('.pth')
+for param in net.parameters():
+    param.requires_grad = False
+
+net.eval()
+gen_voc = []
+for i in range(100):
+    voc = decode(net.generate(idx=torch.ones((1,1), dtype=torch.long).to(device),
+                              max_new_tokens=40, temperature=1.0))
+    voc = str(voc[1:])
+
 
 
 class RNNModel(nn.Module):
@@ -189,8 +211,4 @@ class LSTMModel(nn.Module):
     def init_state(self,sequence_length=183):
         return (torch.zeros(self.num_layers, sequence_length, self.lstm_size),
                 torch.zeros(self.num_layers, sequence_length, self.lstm_size))
-    
 
-class GPT(nn.Module):
-  def __init__(self,):
-    super().__init__()
