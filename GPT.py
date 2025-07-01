@@ -47,7 +47,7 @@ class MultiHeadAttention(nn.Module):
         score = F.softmax(score, dim=-1)
         score = self.dropout(score)
         
-        atten  = wei @ v
+        atten  = score @ v
         output = self.line(atten)
         return self.norm(output+residual)
 
@@ -62,19 +62,17 @@ class FeedFoward(nn.Module):
             nn.Linear(4* voc_embd, voc_embd), nn.Dropout(dropout),)
         self.norm = nn.LayerNorm(voc_embd)
         
-
     def forward(self, x):
         return self.norm(self.net(x) + x)
 
 class Block(nn.Module):
 
-    def __init__(self, n_embd, n_head):
+    def __init__(self, voc_embd, d_model,num_head):
         super().__init__()
-        head_size = n_embd // n_head
-        self.sa = MultiHeadAttention(n_head, head_size)
-        self.ffwd = FeedFoward(n_embd)
-        self.ln1 = nn.LayerNorm(n_embd)
-        self.ln2 = nn.LayerNorm(n_embd)
+        head_size = d_model // num_head
+        self.sa = MultiHeadAttention(voc_embd ,d_model，num_hend)
+        self.ffwd = FeedFoward(voc_embd)
+        
 
     def forward(self, x):
         x = x + self.sa(self.ln1(x))
