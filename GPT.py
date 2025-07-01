@@ -87,10 +87,10 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(max_len, n_embd)
-        self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head)
+        self.blocks = nn.Sequential(*[Block(voc_embd, n_head=n_head)
                                       for _ in range(n_layer)])
-        self.ln_f = nn.LayerNorm(n_embd)
-        self.lm_head = nn.Linear(n_embd, vocab_size)
+        self.ln_f = nn.LayerNorm(voc_embd)
+        self.lm_head = nn.Linear(voc_embd, vocab_size)
 
 
     def forward(self, idx, targets=None):
@@ -128,16 +128,16 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
 
-# 模型训练
+'''--------模型训练-----------'''
 net = BigramLanguageModel()
 logits, loss = net(batch['input'],batch['target'])
 
-# 模型测试
+'''--------模型测试-----------'''
 net = BigramLanguageModel()
 net.eval()
 logits, loss = net(batch['input'],batch['target'])
 
-# 生成模型
+'''--------生成模型-----------'''
 decode = lambda l: ''.join(seq_dict[i] for i in l)
 net = torch.load('.pth')
 for param in net.parameters():
