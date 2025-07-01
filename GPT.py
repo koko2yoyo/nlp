@@ -59,7 +59,7 @@ class FeedFoward(nn.Module):
     def __init__(self, voc_embd):
         super().__init__()
         self.net = nn.Sequential(nn.Linear(voc_embd, 4* voc_embd),nn.LeakyReLU(),
-            nn.Linear(4* voc_embd, voc_embd), nn.Dropout(dropout),)
+                                 nn.Linear(4* voc_embd, voc_embd), nn.Dropout(dropout),)
         self.norm = nn.LayerNorm(voc_embd)
         
     def forward(self, x):
@@ -70,13 +70,13 @@ class Block(nn.Module):
     def __init__(self, voc_embd, d_model,num_head):
         super().__init__()
         head_size = d_model // num_head
-        self.sa = MultiHeadAttention(voc_embd ,d_model，num_hend)
+        self.atten = MultiHeadAttention(voc_embd ,d_model，num_hend)
         self.ffwd = FeedFoward(voc_embd)
         
 
     def forward(self, x):
-        x = x + self.sa(self.ln1(x))
-        x = x + self.ffwd((self.ln2(x)))
+        x = self.atten(x)
+        x =  self.ffwd(x)
         return x
 
 
