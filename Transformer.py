@@ -4,15 +4,53 @@ import
 Transforerm: Encoder + Decoder
 Encoder：
     src_embedding
-    Multi-Head-Attention: softmax(q*k/sqrt(d_k)).msak_fill_*v + line + residual + norm
-    PosWiseFeedWard: line + relu + line + dropout + residual + norm
+    
+    MultiHeadAttention:  softmax(q*k/sqrt(d_k)).mask_fill_*v + line  + residual + norm
+   
+    PosWiseFeedWard     :  line + relu + line + dropout + residual + norm
 
 Decoder:
     dec_embedding
     
-'''
+    dec-MultiHeadAttention    : softmax(q*k/sqrt(d_k).mask_fill(dec_mask)*v + line  + residual + norm
+    dec-enc-MultiHeadAttention: softmax(q*k/sqrt(d_k).mask_fill(dec_enc_mask)*v + line  + residual + norm
 
-MutilHeadAttention + PoswiseFeedForward
+    PosWiseFeedWard           : line + relu + line + dropout + residual + norm
+    
+'''
+class PositionEmbedding(nn.Module):
+    def __init__(self,max_len,voc_embed):
+        self.encoding = torch.zeros(max_len,voc_embed, device)
+        self.encoding.requires_grad = False
+        pos = torch.arange(0,max_len,device)
+        pos = pos.float().unsqueeze(dim=1)
+
+        pos_i = torch.arange(0,voc_embed,2,device).float()
+
+        self.encodeing[:,0::2] = torch.sin(pos/10000**(pos_i/voc_embed))
+        self.encodeing[:,1::2] = torch.cos(pos/10000**(pos_i/voc_embed))
+    def forward(self, x):
+        # self.encoding
+        # [max_len = 512, d_model = 512]
+
+        batch_size, seq_len = x.size()
+        # [batch_size = 128, seq_len = 30]
+
+        return self.encoding[:seq_len, :]
+
+class TransformerEmbedding(nn.Module):
+    def __init__(self, vocab_size, voc_embed, max_len, device):
+        super().__init__()
+        self.token_emb = nn.Enbedding(vocab_size,voc_embed)
+        self.pos_emb = PositionEmbedding(voc_embed, max_len, device)
+
+    def forward(self,x):
+        token_emb = self.token_emb(x)
+        pos_emb = self.pos_emb(x)
+        
+        return token_emb + pos_emb
+    
+    
 
 class MutliHeadAttention(nn.Moudel):
     def __init__(self,d_model,n_head):
@@ -103,8 +141,9 @@ class Decoder(nn.Module):
         dec_attn = self.attention(dec,dec,dec,dec_mask)
         if enc is not None:
             # computer encoder_decoder attention
-            dec_enc = self.enc_dec_attention(dec_attn,enc,end,enc_mask)
-        x = self.poswisefeedword()
+            dec_enc = self.enc_dec_attention(dec_attn, enc, enc, enc_mask)
+        x = self.poswisefeedword(dec_enc)
+        return x
 
 
 class TransformerDecoder(nn.Module):
@@ -123,8 +162,34 @@ class TransformerDecoder(nn.Module):
         return outpot
 
 class Transformer(nn.Module):
-    def __init__(self,seq_len,d_model,n_head):
+    def __init__(self, seq_len, voc_embd, d_model, n_head,device):
         super().__init__()
+        self.device = device
+        self.encoder = TransformerEncoder(seq_len,d_model,n_head)
+
+        self.decoder = TransformerDecoder(seq_len,d_model,n_head)
+
+    def forward(self,src,dec):
+        B,T = src.size()
+        enc_mask = src.data.eq(0).unsqueeze(1).expand(B,T,T)
+        dec_mask = get_dec_mask(dec)
+
+        enc_out = self.encoder(src, enc_mask)
+        dec_out = self.decoder(dec, enc_out, dec_mask, enc_mask)
+
+        return dec_out
+        
+
+    def get_dec_mask(self,dec):
+        B,T = dec.size()
+        dec_pad_mask = dec.data.eq(0).unsqueeze(1).expand(B, T, T)
+        dec_seq_mask = torch.tril(torch.ones(T, T)).type(torch.ByteTensor).to(self.devic)
+        dec_mask = torch.gt(dec_pad_mask+dec_seq_mask,0)
+        return dec_mask
+        
+        
+
+
         
         
         
